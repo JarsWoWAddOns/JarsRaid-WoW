@@ -36,6 +36,8 @@ local DEFAULTS = {
     locked          = false,
     hideBlizzardFrames = true,
     threatBorder    = false,  -- Red/orange border overlay when a unit has high threat
+    showRangeAlpha  = true,   -- Fade out-of-range frames
+    rangeAlpha      = 30,     -- Alpha % for out-of-range frames (0-100)
     -- 5 aura placement slots (icons within each slot are always horizontal)
     slots = {
         [1] = { enabled = true,  position = "BOTTOM_RIGHT", count = 6, filter = "HELPFUL|RAID",   iconSize = 14 },
@@ -81,8 +83,8 @@ local MAX_SLOT_ICONS = 10
 local UI = {
     bg        = { 0.10, 0.10, 0.12, 0.95 },
     header    = { 0.13, 0.13, 0.16, 1    },
-    accent    = { 0.30, 0.75, 0.75, 1    },
-    accentDim = { 0.20, 0.50, 0.50, 1    },
+    accent    = { 1.0,  0.55, 0.0,  1    },
+    accentDim = { 0.70, 0.35, 0.0,  1    },
     text      = { 0.90, 0.90, 0.90, 1    },
     textDim   = { 0.55, 0.55, 0.58, 1    },
     border    = { 0.22, 0.22, 0.26, 1    },
@@ -101,6 +103,8 @@ local bossContainer  = nil  -- parent frame for boss frames
 local configFrame    = nil
 local playerClass    = nil
 local characterKey   = nil  -- per-character key for HoT frames config (Realm-Character)
+local testMode       = false
+local testMembers    = nil  -- fake member list when test mode is active
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- DB helpers
@@ -1047,10 +1051,11 @@ local function EnsureContainer()
     containerFrame = CreateFrame("Frame", "JarsRaidContainer", UIParent)
     containerFrame:SetSize(400, 300)
 
-    -- Restore saved position or use default
+    -- Restore saved position or use default (anchored TOPLEFT so growth goes right/down only)
     local px = JarsRaidDB.posX ~= nil and JarsRaidDB.posX or D("posX")
     local py = JarsRaidDB.posY ~= nil and JarsRaidDB.posY or D("posY")
-    containerFrame:SetPoint("CENTER", UIParent, "CENTER", px, py)
+    local anchor = JarsRaidDB.posAnchor or "CENTER"
+    containerFrame:SetPoint(anchor, UIParent, anchor, px, py)
 
     containerFrame:SetMovable(true)
     containerFrame:SetClampedToScreen(true)
@@ -1060,9 +1065,18 @@ local function EnsureContainer()
     end)
     containerFrame:SetScript("OnMouseUp", function(self)
         self:StopMovingOrSizing()
-        local _, _, _, x, y = self:GetPoint()
+        -- Re-anchor to TOPLEFT so resizing grows right/down only
+        local left   = self:GetLeft()
+        local top    = self:GetTop()
+        local parent = UIParent
+        local scale  = self:GetEffectiveScale() / parent:GetEffectiveScale()
+        local x = left * scale
+        local y = (top - parent:GetHeight()) * scale
+        self:ClearAllPoints()
+        self:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
         JarsRaidDB.posX = x
         JarsRaidDB.posY = y
+        JarsRaidDB.posAnchor = "TOPLEFT"
     end)
 end
 
@@ -1140,10 +1154,172 @@ local function LayoutBossFrames()
     end
 end
 
-local function LayoutRaidFrames()
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Test mode: generate fake raid members for layout preview
+-- ─────────────────────────────────────────────────────────────────────────────
+local TEST_CLASSES = {
+    "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST",
+    "DEATHKNIGHT", "SHAMAN", "MAGE", "WARLOCK", "MONK",
+    "DRUID", "DEMONHUNTER", "EVOKER",
+}
+local TEST_NAMES = {
+    "Arthas", "Jaina", "Thrall", "Sylvanas", "Velen",
+    "Tyrande", "Malfurion", "Anduin", "Garrosh", "Saurfang",
+    "Khadgar", "Illidan", "Gul'dan", "Yrel", "Alleria",
+    "Turalyon", "Lor'themar", "Thalyssra", "Baine", "Calia",
+    "Magni", "Moira", "Falstad", "Muradin", "Gelbin",
+    "Mekkatorque", "Voss", "Gazlowe", "Ji", "Aysa",
+    "Wrathion", "Ebyssian", "Nozdormu", "Alexstrasza", "Kalecgos",
+    "Chromie", "Brann", "Rokhan", "Taelia", "Darion",
+}
+local TEST_ROLES = { "TANK", "HEALER", "DAMAGER", "DAMAGER", "DAMAGER" }
+
+local function GenerateTestMembers(count)
+    local members = {}
+    local shuffledNames = {}
+    for i, n in ipairs(TEST_NAMES) do shuffledNames[i] = n end
+    -- Simple shuffle
+    for i = #shuffledNames, 2, -1 do
+        local j = math.random(1, i)
+        shuffledNames[i], shuffledNames[j] = shuffledNames[j], shuffledNames[i]
+    end
+
+    for i = 1, count do
+        local cls  = TEST_CLASSES[math.random(1, #TEST_CLASSES)]
+        local role = TEST_ROLES[math.random(1, #TEST_ROLES)]
+        -- Force first 2 to be tanks, next 2-4 to be healers for realism
+        if i <= 2 then role = "TANK"
+        elseif i <= 4 or (count >= 20 and i <= 6) then role = "HEALER"
+        end
+        table.insert(members, {
+            unit   = nil,  -- no real unit
+            name   = shuffledNames[((i - 1) % #shuffledNames) + 1],
+            class  = cls,
+            role   = role,
+            group  = math.ceil(i / 5),
+            health = math.random(20, 100),  -- random HP %
+        })
+    end
+
+    -- Apply the same sorting as real raid
+    local sortBy = D("sortBy")
+    local byName = D("sortByName")
+    table.sort(members, function(a, b)
+        if sortBy == "ROLE" and a.role ~= b.role then
+            return (rolePriority[a.role] or 99) < (rolePriority[b.role] or 99)
+        elseif sortBy == "CLASS" and a.class ~= b.class then
+            return a.class < b.class
+        elseif sortBy == "GROUP" and a.group ~= b.group then
+            return a.group < b.group
+        end
+        if byName then return a.name < b.name end
+        return false
+    end)
+    return members
+end
+
+local function UpdateTestFrame(frame, member)
+    if not member then
+        frame:Hide()
+        return
+    end
+
+    -- Detach from any real unit
+    if frame.unit then
+        pcall(UnregisterUnitWatch, frame)
+        frame:SetAttribute("unit", nil)
+        frame.unit = nil
+    end
+
+    frame:Show()
+    frame:SetAlpha(1)
+
+    -- Name
+    if D("showNames") then
+        frame.nameText:SetText(member.name)
+        frame.nameText:Show()
+    else
+        frame.nameText:Hide()
+    end
+
+    -- Health bar
+    frame.healthBar:SetMinMaxValues(0, 100)
+    frame.healthBar:SetValue(member.health)
+    frame.healthText:SetText(member.health .. "%")
+
+    -- Class colour
+    if D("showClassColors") and RAID_CLASS_COLORS then
+        local c = RAID_CLASS_COLORS[member.class]
+        if c then frame.healthBar:SetStatusBarColor(c.r, c.g, c.b) end
+    else
+        frame.healthBar:SetStatusBarColor(0, 1, 0)
+    end
+
+    -- Role icon
+    if D("showRoleIcon") then
+        if member.role == "TANK" then
+            frame.roleIcon:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES")
+            frame.roleIcon:SetTexCoord(0, 19/64, 22/64, 41/64)
+            frame.roleIcon:Show()
+        elseif member.role == "HEALER" then
+            frame.roleIcon:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES")
+            frame.roleIcon:SetTexCoord(20/64, 39/64, 1/64, 20/64)
+            frame.roleIcon:Show()
+        elseif member.role == "DAMAGER" then
+            frame.roleIcon:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES")
+            frame.roleIcon:SetTexCoord(20/64, 39/64, 22/64, 41/64)
+            frame.roleIcon:Show()
+        else
+            frame.roleIcon:Hide()
+        end
+    else
+        frame.roleIcon:Hide()
+    end
+
+    -- Reset borders to default
+    local bc = D("borderColor")
+    frame.border.top:SetColorTexture(bc.r, bc.g, bc.b, bc.a)
+    frame.border.bottom:SetColorTexture(bc.r, bc.g, bc.b, bc.a)
+    frame.border.left:SetColorTexture(bc.r, bc.g, bc.b, bc.a)
+    frame.border.right:SetColorTexture(bc.r, bc.g, bc.b, bc.a)
+    frame.dispelHighlight:Hide()
+
+    -- Hide all aura/hot icons
+    for s = 1, 5 do
+        local icons = frame.slotIcons and frame.slotIcons[s]
+        if icons then for ic = 1, MAX_SLOT_ICONS do if icons[ic] then icons[ic]:Hide() end end end
+        icons = frame.mySlotIcons and frame.mySlotIcons[s]
+        if icons then for ic = 1, MAX_SLOT_ICONS do if icons[ic] then icons[ic]:Hide() end end end
+    end
+    for s = 1, 4 do
+        local icons = frame.hotSlotIcons and frame.hotSlotIcons[s]
+        if icons and icons[1] then icons[1]:Hide() end
+    end
+end
+
+local LayoutRaidFrames  -- forward declaration
+
+local function StartTestMode(count)
+    testMode = true
+    testMembers = GenerateTestMembers(count)
+    LayoutRaidFrames()
+end
+
+local function StopTestMode()
+    testMode = false
+    testMembers = nil
+    LayoutRaidFrames()
+end
+
+LayoutRaidFrames = function()
     EnsureContainer()
 
-    local members  = SortRaidMembers()
+    local members
+    if testMode and testMembers then
+        members = testMembers
+    else
+        members = SortRaidMembers()
+    end
     local n        = #members
     local cols     = D("columns")         -- per-row (H) or per-column (V)
     local fw       = D("frameWidth")
@@ -1175,12 +1351,23 @@ local function LayoutRaidFrames()
              col * (fw + pad),
             -row * (fh + pad))
         raidFrames[i]:SetSize(fw, fh)
-        UpdateRaidFrame(raidFrames[i], m.unit)
+
+        if testMode then
+            UpdateTestFrame(raidFrames[i], m)
+        else
+            UpdateRaidFrame(raidFrames[i], m.unit)
+        end
     end
 
     -- Hide surplus frames
     for i = n + 1, #raidFrames do
-        if raidFrames[i] then UpdateRaidFrame(raidFrames[i], nil) end
+        if raidFrames[i] then
+            if testMode then
+                raidFrames[i]:Hide()
+            else
+                UpdateRaidFrame(raidFrames[i], nil)
+            end
+        end
     end
 
     -- Resize container to fit exactly
@@ -1356,6 +1543,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         LayoutRaidFrames()
 
     elseif event == "GROUP_ROSTER_UPDATE" or event == "RAID_ROSTER_UPDATE" then
+        if testMode then StopTestMode() end
         LayoutRaidFrames()
 
     elseif event == "UNIT_HEALTH" then
@@ -1397,6 +1585,48 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "ENCOUNTER_START" or event == "ENCOUNTER_END"
         or event == "INSTANCE_ENCOUNTER_ENGAGE_UNIT" then
         LayoutBossFrames()
+    end
+end)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Range detection: periodic alpha fade for out-of-range frames
+-- Uses SetAlphaFromBoolean to handle TWW secret boolean values from UnitInRange
+-- ─────────────────────────────────────────────────────────────────────────────
+local rangeTimer = 0
+eventFrame:SetScript("OnUpdate", function(self, elapsed)
+    rangeTimer = rangeTimer + elapsed
+    if rangeTimer < 0.2 then return end
+    rangeTimer = 0
+
+    local enabled = D("showRangeAlpha")
+    local outAlpha = D("rangeAlpha") / 100
+
+    for _, f in ipairs(raidFrames) do
+        if f.unit and f:IsShown() then
+            if not enabled then
+                f:SetAlpha(1)
+            elseif UnitIsUnit(f.unit, "player") then
+                f:SetAlpha(1)
+            elseif f.SetAlphaFromBoolean then
+                local inRange = UnitInRange(f.unit)
+                f:SetAlphaFromBoolean(inRange, 1, outAlpha)
+            else
+                f:SetAlpha(1)
+            end
+        end
+    end
+
+    for _, f in ipairs(bossFrames) do
+        if f.unit and f:IsShown() then
+            if not enabled then
+                f:SetAlpha(1)
+            elseif f.SetAlphaFromBoolean then
+                local inRange = UnitInRange(f.unit)
+                f:SetAlphaFromBoolean(inRange, 1, outAlpha)
+            else
+                f:SetAlpha(1)
+            end
+        end
     end
 end)
 
@@ -1660,6 +1890,10 @@ local function BuildConfigFrame()
         function() return D("nameFontSize") end,
         function(v) JarsRaidDB.nameFontSize = v; LayoutRaidFrames() end)
 
+    AddSlider("Range Fade %", 0, 100, 5,
+        function() return D("rangeAlpha") end,
+        function(v) JarsRaidDB.rangeAlpha = v end)
+
     -- Name Outline
     local nameOlLbl = MakeLabel(gen, "Name Outline:", 13)
     nameOlLbl:SetPoint("TOPLEFT", gen, "TOPLEFT", 10, gy)
@@ -1701,12 +1935,31 @@ local function BuildConfigFrame()
         { " Lock Position",        function() return D("locked") end,             function(v) JarsRaidDB.locked = v end },
         { " Hide Blizzard Frames", function() return D("hideBlizzardFrames") end, function(v) JarsRaidDB.hideBlizzardFrames = v; UpdateBlizzardFrameVisibility() end },
         { " Threat Border",        function() return D("threatBorder")       end, function(v) JarsRaidDB.threatBorder = v; LayoutRaidFrames() end },
+        { " Range Fade",           function() return D("showRangeAlpha")     end, function(v) JarsRaidDB.showRangeAlpha = v end },
     }
     for _, cd in ipairs(checks) do
         local cb = MakeCheckbox(gen, cd[1], cd[2], cd[3])
         cb:SetPoint("TOPLEFT", gen, "TOPLEFT", RC_X - 4, ry)
         ry = ry - 26
     end
+
+    -- Test Mode buttons
+    ry = ry - 10
+    local testLbl = MakeLabel(gen, "Test Mode:", 13)
+    testLbl:SetPoint("TOPLEFT", gen, "TOPLEFT", RC_X, ry)
+    ry = ry - 24
+    for _, cfg in ipairs({{10,"Test 10"},{20,"Test 20"},{40,"Test 40"}}) do
+        local btn = MakeButton(gen, 100, 22, cfg[2], function()
+            StartTestMode(cfg[1])
+        end)
+        btn:SetPoint("TOPLEFT", gen, "TOPLEFT", RC_X, ry)
+        ry = ry - 28
+    end
+    local stopBtn = MakeButton(gen, 100, 22, "Stop Test", function()
+        StopTestMode()
+    end)
+    stopBtn:SetPoint("TOPLEFT", gen, "TOPLEFT", RC_X, ry)
+    ry = ry - 28
 
     -- ── Aura Slots tab ────────────────────────────────────────────────────────
     -- Uniform column positions for all rows:
