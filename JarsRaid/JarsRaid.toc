@@ -1,0 +1,8 @@
+## Interface: 120001, 120000
+## Title: JarsRaid
+## Notes: Clean raid frames with 5 configurable aura slots and debuff type borders
+## Author: Jar
+## Version: 1.0.0
+## SavedVariables: JarsRaidDB
+
+JarsRaid.lua
