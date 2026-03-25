@@ -41,10 +41,10 @@ local DEFAULTS = {
     -- 5 aura placement slots (icons within each slot are always horizontal)
     slots = {
         [1] = { enabled = true,  position = "BOTTOM_RIGHT", count = 6, filter = "HELPFUL|RAID",   iconSize = 14 },
-        [2] = { enabled = true,  position = "BOTTOM_LEFT",  count = 3, filter = "HARMFUL",        iconSize = 14 },
+        [2] = { enabled = true,  position = "BOTTOM_LEFT",  count = 3, filter = "HARMFUL|RAID",   iconSize = 14 },
         [3] = { enabled = false, position = "TOP_RIGHT",    count = 4, filter = "HELPFUL|PLAYER", iconSize = 12 },
         [4] = { enabled = false, position = "TOP_LEFT",     count = 4, filter = "HELPFUL",        iconSize = 12 },
-        [5] = { enabled = false, position = "CENTER",       count = 3, filter = "HARMFUL",        iconSize = 12 },
+        [5] = { enabled = false, position = "CENTER",       count = 3, filter = "HARMFUL|RAID",   iconSize = 12 },
     },
     -- Boss frames
     bossEnabled     = false,
@@ -56,10 +56,10 @@ local DEFAULTS = {
     myFrameEnabled = false,
     mySlots = {
         [1] = { enabled = true,  position = "BOTTOM_RIGHT", count = 4, filter = "HELPFUL|PLAYER", iconSize = 14 },
-        [2] = { enabled = false, position = "BOTTOM_LEFT",  count = 3, filter = "HARMFUL",        iconSize = 14 },
+        [2] = { enabled = false, position = "BOTTOM_LEFT",  count = 3, filter = "HARMFUL|RAID",   iconSize = 14 },
         [3] = { enabled = false, position = "TOP_RIGHT",    count = 3, filter = "HELPFUL",        iconSize = 12 },
         [4] = { enabled = false, position = "TOP_LEFT",     count = 3, filter = "HELPFUL",        iconSize = 12 },
-        [5] = { enabled = false, position = "CENTER",       count = 3, filter = "HARMFUL",        iconSize = 12 },
+        [5] = { enabled = false, position = "CENTER",       count = 3, filter = "HARMFUL|RAID",   iconSize = 12 },
     },
     -- HoT Frames: 4 centralized icon slots for tracking specific healer HoTs/buffs (up to 3 spells per slot)
     hotFrames = {
@@ -225,51 +225,128 @@ local function GetDebuffTypeColor(dispelName)
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Whitelisted HoT spells for HoT Frames feature
+-- HoT spell lists: per-class spells + universal spells (apply to all classes)
+-- Each entry is { id = <spellID>, spec = "<Spec Label>" }
 -- ─────────────────────────────────────────────────────────────────────────────
-local WHITELISTED_HOTS = {
-    -- Preservation Evoker
-    355941, 363502, 364343, 366155, 367364, 373267, 376788,
-    -- Augmentation Evoker
-    360827, 395152, 410089, 410263, 410686, 413984,
-    -- Resto Druid
-    774, 8936, 33763, 48438, 155777,
-    -- Disc Priest
-    17, 194384, 1253593,
-    -- Holy Priest
-    139, 41635, 77489,
-    -- Mistweaver Monk
-    115175, 119611, 124682, 450769,
-    -- Restoration Shaman
-    974, 383648, 61295, 207400, 382024, 444490,
-    -- Holy Paladin
-    53563, 156322, 156910, 1244893,
+local CLASS_HOTS = {
+    EVOKER = {
+        { id = 355941, spec = "Preservation" }, { id = 363502, spec = "Preservation" },
+        { id = 364343, spec = "Preservation" }, { id = 366155, spec = "Preservation" },
+        { id = 367364, spec = "Preservation" }, { id = 373267, spec = "Preservation" },
+        { id = 376788, spec = "Preservation" },
+        { id = 360827, spec = "Augmentation" }, { id = 395152, spec = "Augmentation" },
+        { id = 410089, spec = "Augmentation" }, { id = 410263, spec = "Augmentation" },
+        { id = 410686, spec = "Augmentation" }, { id = 413984, spec = "Augmentation" },
+    },
+    DRUID = {
+        { id = 774,    spec = "Resto" }, { id = 8936,  spec = "Resto" },
+        { id = 33763,  spec = "Resto" }, { id = 48438, spec = "Resto" },
+        { id = 155777, spec = "Resto" },
+    },
+    PRIEST = {
+        { id = 17,      spec = "Disc" }, { id = 194384,  spec = "Disc" },
+        { id = 1253593, spec = "Disc" },
+        { id = 139,     spec = "Holy" }, { id = 41635,   spec = "Holy" },
+        { id = 77489,   spec = "Holy" },
+    },
+    MONK = {
+        { id = 115175, spec = "Mistweaver" }, { id = 119611, spec = "Mistweaver" },
+        { id = 124682, spec = "Mistweaver" }, { id = 450769, spec = "Mistweaver" },
+    },
+    SHAMAN = {
+        { id = 974,    spec = "Resto" }, { id = 383648, spec = "Resto" },
+        { id = 61295,  spec = "Resto" }, { id = 207400, spec = "Resto" },
+        { id = 382024, spec = "Resto" }, { id = 444490, spec = "Resto" },
+        { id = 319773, spec = "Imbue"  }, { id = 319778, spec = "Imbue"  },
+        { id = 382021, spec = "Imbue"  }, { id = 382022, spec = "Imbue"  },
+        { id = 457496, spec = "Imbue"  }, { id = 457481, spec = "Imbue"  },
+        { id = 462757, spec = "Imbue"  }, { id = 462742, spec = "Imbue"  },
+    },
+    PALADIN = {
+        { id = 53563,   spec = "Holy" }, { id = 156322,  spec = "Holy" },
+        { id = 156910,  spec = "Holy" }, { id = 1244893, spec = "Holy" },
+    },
+    ROGUE = {
+        { id = 2823,   spec = "Poison" }, { id = 8679,   spec = "Poison" },
+        { id = 3408,   spec = "Poison" }, { id = 5761,   spec = "Poison" },
+        { id = 315584, spec = "Poison" }, { id = 381637, spec = "Poison" },
+        { id = 381664, spec = "Poison" },
+    },
+}
+
+local UNIVERSAL_HOTS = {
     -- Long-term Raid Buffs
-    1459, 6673, 21562, 369459, 462854, 474754,
+    { id = 1459,   spec = "Raid Buff" }, { id = 6673,   spec = "Raid Buff" },
+    { id = 21562,  spec = "Raid Buff" }, { id = 369459, spec = "Raid Buff" },
+    { id = 462854, spec = "Raid Buff" }, { id = 474754, spec = "Raid Buff" },
     -- Blessing of the Bronze Auras
-    381732, 381741, 381746, 381748, 381749, 381750, 381751, 381752, 381753, 381754, 381756, 381757, 381758,
+    { id = 381732, spec = "Bronze" }, { id = 381741, spec = "Bronze" },
+    { id = 381746, spec = "Bronze" }, { id = 381748, spec = "Bronze" },
+    { id = 381749, spec = "Bronze" }, { id = 381750, spec = "Bronze" },
+    { id = 381751, spec = "Bronze" }, { id = 381752, spec = "Bronze" },
+    { id = 381753, spec = "Bronze" }, { id = 381754, spec = "Bronze" },
+    { id = 381756, spec = "Bronze" }, { id = 381757, spec = "Bronze" },
+    { id = 381758, spec = "Bronze" },
     -- Long-term Self Buffs
-    433568, 433583,
-    -- Rogue Poisons
-    2823, 8679, 3408, 5761, 315584, 381637, 381664,
-    -- Shaman Imbuements
-    319773, 319778, 382021, 382022, 457496, 457481, 462757, 462742,
+    { id = 433568, spec = "Self Buff" }, { id = 433583, spec = "Self Buff" },
     -- Resource-like Auras
-    205473, 260286,
+    { id = 205473, spec = "Resource" }, { id = 260286, spec = "Resource" },
     -- Sated/Exhaustion Debuffs
-    57723, 57724, 80354, 95809, 160455, 264689, 390435,
+    { id = 57723,  spec = "Exhaustion" }, { id = 57724,  spec = "Exhaustion" },
+    { id = 80354,  spec = "Exhaustion" }, { id = 95809,  spec = "Exhaustion" },
+    { id = 160455, spec = "Exhaustion" }, { id = 264689, spec = "Exhaustion" },
+    { id = 390435, spec = "Exhaustion" },
     -- Deserter Debuffs
-    26013, 71041,
+    { id = 26013,  spec = "Deserter" }, { id = 71041,  spec = "Deserter" },
     -- Skyriding
-    427490, 447959, 447960,
+    { id = 427490, spec = "Skyriding" }, { id = 447959, spec = "Skyriding" },
+    { id = 447960, spec = "Skyriding" },
 }
 
 local function IsSpellWhitelisted(spellID)
-    if not spellID or spellID == 0 then return true end  -- Empty slot always valid
-    for _, id in ipairs(WHITELISTED_HOTS) do
-        if id == spellID then return true end
+    if not spellID or spellID == 0 then return true end
+    local cls = CLASS_HOTS[playerClass]
+    if cls then
+        for _, entry in ipairs(cls) do
+            if entry.id == spellID then return true end
+        end
+    end
+    for _, entry in ipairs(UNIVERSAL_HOTS) do
+        if entry.id == spellID then return true end
     end
     return false
+end
+
+-- Returns an ordered list of {id, name} entries for the current player's class.
+-- Spell names include a parenthetical spec label, e.g. "Rejuvenation (Resto)".
+-- (class-specific spells first, then universal spells; id=0 is "None")
+local function GetHotsForClass()
+    if not playerClass then
+        playerClass = select(2, UnitClass("player"))
+    end
+    local list = { { id = 0, name = "-- None --" } }
+    local seen = {}
+    local function AddEntries(entries)
+        for _, entry in ipairs(entries) do
+            if not seen[entry.id] then
+                seen[entry.id] = true
+                local name
+                if C_Spell and C_Spell.GetSpellName then
+                    name = C_Spell.GetSpellName(entry.id)
+                end
+                if not name and GetSpellInfo then
+                    name = (GetSpellInfo(entry.id))
+                end
+                name = (name or ("Spell " .. entry.id)) .. " (" .. entry.spec .. ")"
+                table.insert(list, { id = entry.id, name = name })
+            end
+        end
+    end
+    if CLASS_HOTS[playerClass] then
+        AddEntries(CLASS_HOTS[playerClass])
+    end
+    AddEntries(UNIVERSAL_HOTS)
+    return list
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -657,13 +734,30 @@ local function UpdateAuraSlot(frame, unit, slotIdx)
         return
     end
 
-    local shown    = 0
+    -- Collect all matching auras
+    local auras = {}
     local auraSlot = 1
-
-    while shown < count and auraSlot <= 40 do
+    while auraSlot <= 40 do
         local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, unit, auraSlot, filter)
         if not ok or not auraData then break end
+        auras[#auras + 1] = auraData
+        auraSlot = auraSlot + 1
+    end
 
+    -- For HARMFUL filters, prioritize boss auras
+    if filter:find("HARMFUL") then
+        pcall(function()
+            table.sort(auras, function(a, b)
+                local aBoss = a.isBossAura and 1 or 0
+                local bBoss = b.isBossAura and 1 or 0
+                return aBoss > bBoss
+            end)
+        end)
+    end
+
+    local shown = 0
+    for idx = 1, math.min(count, #auras) do
+        local auraData = auras[idx]
         local ic = icons[shown + 1]
         if ic then
             local texOk = pcall(function() ic.icon:SetTexture(auraData.icon) end)
@@ -694,7 +788,6 @@ local function UpdateAuraSlot(frame, unit, slotIdx)
                 shown = shown + 1
             end
         end
-        auraSlot = auraSlot + 1
     end
 
     -- Hide unused
@@ -717,13 +810,30 @@ local function UpdateMyAuraSlot(frame, unit, slotIdx)
         return
     end
 
-    local shown    = 0
+    -- Collect all matching auras
+    local auras = {}
     local auraSlot = 1
-
-    while shown < count and auraSlot <= 40 do
+    while auraSlot <= 40 do
         local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, unit, auraSlot, filter)
         if not ok or not auraData then break end
+        auras[#auras + 1] = auraData
+        auraSlot = auraSlot + 1
+    end
 
+    -- For HARMFUL filters, prioritize boss auras
+    if filter:find("HARMFUL") then
+        pcall(function()
+            table.sort(auras, function(a, b)
+                local aBoss = a.isBossAura and 1 or 0
+                local bBoss = b.isBossAura and 1 or 0
+                return aBoss > bBoss
+            end)
+        end)
+    end
+
+    local shown = 0
+    for idx = 1, math.min(count, #auras) do
+        local auraData = auras[idx]
         local ic = icons[shown + 1]
         if ic then
             local texOk = pcall(function() ic.icon:SetTexture(auraData.icon) end)
@@ -749,7 +859,6 @@ local function UpdateMyAuraSlot(frame, unit, slotIdx)
                 shown = shown + 1
             end
         end
-        auraSlot = auraSlot + 1
     end
 
     for i = shown + 1, MAX_SLOT_ICONS do
@@ -1749,6 +1858,157 @@ local FILTER_PRESETS  = {
     "HARMFUL|NOT_SELF",
 }
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- HoT spell dropdown widget
+-- A clickable button that opens a scrollable popup listing valid spells for
+-- the current class. Replaces the raw-EditBox spell-ID fields in the HoT tab.
+-- ─────────────────────────────────────────────────────────────────────────────
+local hotSpellPopup = nil
+
+local function GetOrCreateHotSpellPopup()
+    if hotSpellPopup then return hotSpellPopup end
+
+    local POPUP_W   = 220
+    local ROW_H     = 18
+    local MAX_VIS_H = 216  -- visible scroll area height (~12 rows)
+
+    local popup = CreateFrame("Frame", "JarsRaidHotSpellPopup", UIParent, "BackdropTemplate")
+    popup:SetFrameStrata("TOOLTIP")
+    popup:SetFrameLevel(200)
+    popup:SetWidth(POPUP_W)
+    popup:SetBackdrop({
+        bgFile   = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    popup:SetBackdropColor(UI.bg[1], UI.bg[2], UI.bg[3], 1)
+    popup:SetBackdropBorderColor(UI.border[1], UI.border[2], UI.border[3], 1)
+    popup:SetClampedToScreen(true)
+
+    -- Scroll frame
+    local sf = CreateFrame("ScrollFrame", nil, popup)
+    sf:SetPoint("TOPLEFT",     popup, "TOPLEFT",      2, -2)
+    sf:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT",  -2,  2)
+    sf:EnableMouseWheel(true)
+    sf:SetScript("OnMouseWheel", function(self, delta)
+        local max = self:GetVerticalScrollRange()
+        local cur = self:GetVerticalScroll()
+        self:SetVerticalScroll(math.max(0, math.min(max, cur - delta * (ROW_H * 3))))
+    end)
+
+    local content = CreateFrame("Frame", nil, sf)
+    content:SetWidth(POPUP_W - 4)
+    sf:SetScrollChild(content)
+
+    popup.scrollFrame = sf
+    popup.content     = content
+    popup.rowH        = ROW_H
+    popup.maxVisH     = MAX_VIS_H
+    popup:Hide()
+
+    -- Close when clicking outside
+    popup:SetScript("OnHide", function(self)
+        self.owner = nil
+    end)
+
+    hotSpellPopup = popup
+    return popup
+end
+
+-- Creates a dropdown button for one spell slot in the HoT tab.
+-- parent     : the hotTab frame
+-- slotIdx    : 1-4 (which HoT slot)
+-- spellKey   : "spell1" / "spell2" / "spell3"
+-- Returns the button frame (already positioned by the caller).
+local function MakeHotSpellDropdown(parent, slotIdx, spellKey)
+    local _si, _sk = slotIdx, spellKey
+
+    local function CurrentName()
+        local id = DH(_si, _sk) or 0
+        if id == 0 then return "-- None --" end
+        local name
+        if C_Spell and C_Spell.GetSpellName then name = C_Spell.GetSpellName(id) end
+        if not name and GetSpellInfo then name = (GetSpellInfo(id)) end
+        return name or ("Spell " .. id)
+    end
+
+    local btn = MakeButton(parent, 200, 18, CurrentName(), nil)
+    btn.label:SetJustifyH("LEFT")
+
+    btn:SetScript("OnClick", function(self)
+        local popup = GetOrCreateHotSpellPopup()
+        -- Toggle off if already open for this button
+        if popup:IsShown() and popup.owner == self then
+            popup:Hide()
+            return
+        end
+        popup.owner = self
+
+        -- Populate rows
+        local content = popup.content
+        local rowH    = popup.rowH
+        -- Release old rows
+        for _, r in ipairs(content.rows or {}) do r:Hide() end
+        content.rows  = {}
+
+        local spells  = GetHotsForClass()
+        local totalH  = #spells * rowH
+        content:SetHeight(math.max(totalH, 1))
+
+        local currentId = DH(_si, _sk) or 0
+        for rowIdx, entry in ipairs(spells) do
+            local row = CreateFrame("Button", nil, content)
+            row:SetSize(popup.scrollFrame:GetWidth() or 216, rowH)
+            row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -(rowIdx - 1) * rowH)
+
+            -- Highlight background
+            local bg = row:CreateTexture(nil, "BACKGROUND")
+            bg:SetAllPoints()
+            if entry.id == currentId then
+                bg:SetColorTexture(UI.accent[1], UI.accent[2], UI.accent[3], 0.3)
+            else
+                bg:SetColorTexture(0, 0, 0, 0)
+            end
+            row:SetScript("OnEnter", function() bg:SetColorTexture(UI.btnHover[1], UI.btnHover[2], UI.btnHover[3], 1) end)
+            row:SetScript("OnLeave", function()
+                if entry.id == (DH(_si, _sk) or 0) then
+                    bg:SetColorTexture(UI.accent[1], UI.accent[2], UI.accent[3], 0.3)
+                else
+                    bg:SetColorTexture(0, 0, 0, 0)
+                end
+            end)
+
+            local lbl = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            lbl:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+            lbl:SetTextColor(UI.text[1], UI.text[2], UI.text[3])
+            lbl:SetPoint("LEFT", 4, 0)
+            lbl:SetText(entry.name)
+
+            local _id = entry.id
+            row:SetScript("OnClick", function()
+                SetDH(_si, _sk, _id)
+                self.label:SetText(CurrentName())
+                popup:Hide()
+                LayoutRaidFrames()
+            end)
+
+            table.insert(content.rows, row)
+        end
+
+        -- Resize popup height to fit (capped at max)
+        local visH = math.min(totalH, popup.maxVisH)
+        popup:SetHeight(visH + 4)
+        popup.scrollFrame:SetVerticalScroll(0)
+
+        -- Position below the button, clamp to screen
+        popup:ClearAllPoints()
+        popup:SetPoint("TOPLEFT", self, "BOTTOMLEFT", 0, -2)
+        popup:Show()
+    end)
+
+    return btn
+end
+
 local function BuildConfigFrame()
     if configFrame then configFrame:Show(); return end
 
@@ -2318,48 +2578,15 @@ local function BuildConfigFrame()
         end)
         hy = hy - 22
 
-        -- Spell ID row
-        -- Up to 3 spell IDs per slot
+        -- Spell dropdowns: up to 3 per slot, showing only class-valid spells
         for spellSlot = 1, 3 do
             local spellKey = "spell" .. spellSlot
 
             local spellLbl = MakeLabel(hotTab, "Spell " .. spellSlot .. ":", 12)
             spellLbl:SetPoint("TOPLEFT", hotTab, "TOPLEFT", 10, hy)
 
-            local spellEB = MakeEditBox(hotTab, 70, 18)
-            spellEB:SetPoint("TOPLEFT", hotTab, "TOPLEFT", 94, hy - 1)
-            spellEB:SetText(tostring(DH(s, spellKey) or 0))
-
-            -- Red warning for non-whitelisted spells
-            local warnLbl = MakeLabel(hotTab, "", 10)
-            warnLbl:SetPoint("TOPLEFT", hotTab, "TOPLEFT", 172, hy - 1)
-            warnLbl:SetTextColor(1, 0, 0)  -- Red
-
-            local function UpdateWarning()
-                local spellID = tonumber(spellEB:GetText()) or 0
-                if spellID ~= 0 and not IsSpellWhitelisted(spellID) then
-                    warnLbl:SetText("(!)")
-                else
-                    warnLbl:SetText("")
-                end
-            end
-
-            spellEB:SetScript("OnEnterPressed", function(self)
-                local v = tonumber(self:GetText())
-                if v then
-                    SetDH(_s, spellKey, math.max(0, math.floor(v)))
-                    self:ClearFocus()
-                    UpdateWarning()
-                    LayoutRaidFrames()
-                end
-            end)
-            spellEB:SetScript("OnEscapePressed", function(self)
-                self:ClearFocus()
-                UpdateWarning()
-            end)
-            spellEB:SetScript("OnTextChanged", function()
-                UpdateWarning()
-            end)
+            local dd = MakeHotSpellDropdown(hotTab, _s, spellKey)
+            dd:SetPoint("TOPLEFT", hotTab, "TOPLEFT", 68, hy)
 
             hy = hy - 20
         end
